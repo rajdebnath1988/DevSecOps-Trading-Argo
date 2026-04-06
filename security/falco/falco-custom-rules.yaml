@@ -1,1 +1,52 @@
+# security/falco/falco-custom-rules.yaml
+customRules:
+  trading-app-rules.yaml: |-
+    - rule: Shell Spawned in Trading API
+      condition: >
+        spawned_process and
+        container.image.repository contains "trading-app-api" and
+        proc.name in (bash, sh, zsh)
+      output: "Shell in API container (user=%user.name cmd=%proc.cmdline)"
+      priority: CRITICAL
+      tags: [trading, rce]
 
+    - rule: Unexpected Outbound from API
+      condition: >
+        outbound and
+        container.image.repository contains "trading-app-api" and
+        not fd.sport in (3306, 8080, 443, 53)
+      output: "Unexpected outbound (conn=%fd.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [trading, network]
+
+    - rule: Sensitive File Read
+      condition: >
+        open_read and
+        fd.name in (/etc/shadow, /etc/passwd) and
+        k8s.ns.name = trading-app
+      output: "Sensitive file read (file=%fd.name pod=%k8s.pod.name)"
+      priority: HIGH
+
+    - rule: Privilege Escalation Attempt
+      condition: >
+        evt.type = setuid and
+        k8s.ns.name = trading-app
+      output: "Privilege escalation (user=%user.name proc=%proc.name)"
+      priority: CRITICAL
+
+    - rule: Crypto Mining Detected
+      condition: >
+        spawned_process and
+        (proc.name in (xmrig, minergate) or
+         proc.cmdline contains "stratum+tcp")
+      output: "Crypto miner! (proc=%proc.name container=%container.id)"
+      priority: CRITICAL
+
+    - rule: kubectl exec Into Prod
+      condition: >
+        ka.verb = create and
+        ka.target.resource = pods/exec and
+        ka.target.namespace = trading-app
+      output: "kubectl exec (user=%ka.user.name pod=%ka.target.name)"
+      priority: WARNING
+      source: k8s_audit
