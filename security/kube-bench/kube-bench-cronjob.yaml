@@ -1,1 +1,64 @@
-
+# security/kube-bench/kube-bench-cronjob.yaml
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-bench-sa
+  namespace: security
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-bench-role
+rules:
+  - apiGroups: [""]
+    resources: [nodes, pods, namespaces, configmaps]
+    verbs: [get, list]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles, clusterrolebindings, roles, rolebindings]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-bench-binding
+subjects:
+  - kind: ServiceAccount
+    name: kube-bench-sa
+    namespace: security
+roleRef:
+  kind: ClusterRole
+  name: kube-bench-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-bench
+  namespace: security
+spec:
+  schedule: "0 2 * * *"       # 02:00 UTC = 07:30 IST daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: kube-bench-sa
+          hostPID: true
+          restartPolicy: Never
+          containers:
+            - name: kube-bench
+              image: aquasec/kube-bench:v0.7.0
+              command:
+                - kube-bench
+                - run
+                - --targets
+                - node,policies
+                - --benchmark
+                - eks-1.4.0
+              securityContext:
+                capabilities:
+                  drop: [ALL]
+                  add: [SYS_PTRACE]
