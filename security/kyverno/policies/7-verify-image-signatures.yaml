@@ -1,1 +1,37 @@
-
+# security/kyverno/policies/verify-image-signatures.yaml
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+  annotations:
+    policies.kyverno.io/description: >-
+      Blocks any trading-app image NOT signed by the GitHub Actions CI pipeline.
+      Prevents supply chain attacks — only images that passed Trivy scan
+      AND were signed by YOUR CI can deploy.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: verify-trading-api-image
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [trading-app, trading-staging]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/YOUR_ORG/trading-app-api*"
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    rekor:
+                      url: https://rekor.sigstore.dev
+                    fulcio:
+                      url: https://fulcio.sigstore.dev
+                      certIssuer: https://token.actions.githubusercontent.com
+                      # Only YOUR CI pipeline's OIDC identity is trusted
+                      subject: "https://github.com/YOUR_ORG/trading-app/.github/workflows/ci-cd.yml@refs/heads/main"
+          mutateDigest: true    # Rewrites tag → immutable digest
+          required: true
+          verifyDigest: true
